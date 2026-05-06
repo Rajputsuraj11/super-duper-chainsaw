@@ -55,11 +55,6 @@ Homepage = "https://github.com/Rajputsuraj11/super-duper-chainsaw"
 Repository = "https://github.com/Rajputsuraj11/super-duper-chainsaw.git"
 "Bug Tracker" = "https://github.com/Rajputsuraj11/super-duper-chainsaw/issues"
 
-[project.scripts]
-test = "pytest pipeline/tests/"
-lint = "flake8 pipeline/ && mypy pipeline/"
-build = "python -m build"
-
 [tool.setuptools.packages.find]
 where = ["pipeline"]
 
