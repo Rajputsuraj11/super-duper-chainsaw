@@ -1,0 +1,43 @@
+# Core PySpark dependencies
+pyspark==3.5.0
+delta-spark==3.0.0
+pyarrow==14.0.1
+
+# Workflow orchestration
+prefect==2.14.14
+prefect-dask==0.2.4
+
+# Data processing
+pandas==2.1.4
+numpy==1.24.4
+
+# Testing framework
+pytest==7.4.3
+pytest-spark==0.6.0
+pytest-cov==4.1.0
+
+# Logging and monitoring
+structlog==23.2.0
+
+# Utilities
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Development tools
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+
+# Optional: For enhanced Delta Lake features
+delta-sharing==1.1.0
+
+# Optional: For cloud storage integration
+adlfs==2024.2.0
+s3fs==2024.2.0
+
+# Optional: For database connectivity
+psycopg2-binary==2.9.9
+mysql-connector-python==8.2.0
+
+# Optional: For monitoring and observability
+prometheus-client==0.19.0

@@ -1,0 +1,265 @@
+name: Healthcare Pipeline CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  test:
+    name: Test Pipeline
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: [3.9, '3.10', 3.11]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Set up Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '11'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest-cov
+    
+    - name: Run unit tests
+      run: |
+        pytest pipeline/tests/test_bronze_layer.py -v --cov=bronze --cov-report=xml
+    
+    - name: Run silver layer tests
+      run: |
+        pytest pipeline/tests/test_silver_layer.py -v --cov=silver --cov-report=xml
+    
+    - name: Run gold layer tests
+      run: |
+        pytest pipeline/tests/test_gold_layer.py -v --cov=gold --cov-report=xml
+    
+    - name: Run integration tests
+      run: |
+        pytest pipeline/tests/test_integration.py -v --cov=integration --cov-report=xml
+    
+    - name: Generate coverage report
+      run: |
+        pytest pipeline/tests/ --cov=pipeline --cov-report=html --cov-report=xml
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install black flake8 mypy
+    
+    - name: Run Black formatting check
+      run: |
+        black --check --diff pipeline/
+    
+    - name: Run flake8 linting
+      run: |
+        flake8 pipeline/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 pipeline/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Run mypy type checking
+      run: |
+        mypy pipeline/ --ignore-missing-imports || true
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install safety bandit
+    
+    - name: Run safety check
+      run: |
+        safety check -r requirements.txt
+    
+    - name: Run bandit security scan
+      run: |
+        bandit -r pipeline/ -f json -o bandit-report.json || true
+    
+    - name: Upload security scan results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-scan-results
+        path: bandit-report.json
+
+  build:
+    name: Build and Package
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+    
+    - name: Build package
+      run: |
+        python -m build
+    
+    - name: Check package
+      run: |
+        twine check dist/*
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: dist
+        path: dist/
+
+  integration-test:
+    name: End-to-End Integration Test
+    runs-on: ubuntu-latest
+    needs: [test, build]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Set up Java
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Run full pipeline test
+      run: |
+        python pipeline/main.py
+    
+    - name: Verify output files
+      run: |
+        ls -la output/
+        ls -la output/bronze/
+        ls -la output/silver/
+        ls -la output/gold/
+    
+    - name: Test Prefect flow
+      run: |
+        python -c "
+        from pipeline.dags.healthcare_pipeline import healthcare_pipeline_flow
+        healthcare_pipeline_flow()
+        "
+
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [integration-test, security]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        # Add your deployment commands here
+        # For example: docker build, kubectl apply, etc.
+    
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests..."
+        # Add smoke test commands here
+
+  notify:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: [test, lint, security, build, integration-test]
+    if: always()
+    
+    steps:
+    - name: Notify on success
+      if: ${{ needs.test.result == 'success' && needs.lint.result == 'success' && needs.integration-test.result == 'success' }}
+      run: |
+        echo "✅ All tests passed successfully!"
+    
+    - name: Notify on failure
+      if: ${{ needs.test.result == 'failure' || needs.lint.result == 'failure' || needs.integration-test.result == 'failure' }}
+      run: |
+        echo "❌ Some tests failed. Check the logs for details."
+        exit 1
