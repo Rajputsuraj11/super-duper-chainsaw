@@ -1,7 +1,18 @@
-from pyspark.sql import SparkSession
-from pipeline.bronze.bronze_layer import BronzeLayer
-from pipeline.silver.silver_layer import SilverLayer
-from pipeline.gold.gold_layer import GoldLayer
+try:
+    from pyspark.sql import SparkSession
+    from pipeline.bronze.bronze_layer import BronzeLayer
+    from pipeline.silver.silver_layer import SilverLayer
+    from pipeline.gold.gold_layer import GoldLayer
+    DEPENDENCIES_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Missing dependencies - {e}")
+    print("Please install requirements: pip install -r requirements.txt")
+    DEPENDENCIES_AVAILABLE = False
+    SparkSession = None
+    BronzeLayer = None
+    SilverLayer = None
+    GoldLayer = None
+
 import logging
 import sys
 import traceback
@@ -153,6 +164,12 @@ class PipelineOrchestrator:
 def main():
     """Main execution function"""
     try:
+        # Check dependencies
+        if not DEPENDENCIES_AVAILABLE:
+            print("Cannot run pipeline - missing dependencies")
+            print("Run: pip install -r requirements.txt")
+            return 1
+        
         # Initialize pipeline
         pipeline = PipelineOrchestrator()
         
@@ -165,14 +182,14 @@ def main():
         
         if success:
             print("Pipeline executed successfully!")
-            sys.exit(0)
+            return 0
         else:
             print("Pipeline execution failed!")
-            sys.exit(1)
+            return 1
             
     except Exception as e:
         logger.error(f"Main execution failed: {str(e)}")
-        sys.exit(1)
+        return 1
 
 if __name__ == "__main__":
     main()
